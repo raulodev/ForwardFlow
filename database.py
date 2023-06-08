@@ -115,13 +115,18 @@ def obtener_msg_programado(id: str):
 
 
 def gurdar_msg_programado(
-    id: str, msg_id: int, chat_id: int, fecha_reenvio: str, duracion: int, channles: str
+    id: str,
+    msg_id: int,
+    chat_id: int,
+    fecha_reenvio: str,
+    duracion: int,
+    channels: list,
 ):
     """Agrega un nuevo mensaje"""
 
     with Session(engine) as session:
 
-        new = Msg(id, msg_id, chat_id, fecha_reenvio, duracion, channles)
+        new = Msg(id, msg_id, chat_id, fecha_reenvio, duracion, ",".join(channels))
         session.add(new)
         session.commit()
 
@@ -152,5 +157,15 @@ def eliminar_canal(chat_id: int):
 
     with Session(engine) as session:
 
+        is_exist = session.execute(
+            select(Canal).where(Canal.chat_id == chat_id)
+        ).fetchone()
+
+        if is_exist is None:
+
+            return False
+
         session.execute(delete(Canal).where(Canal.chat_id == chat_id))
         session.commit()
+
+        return True

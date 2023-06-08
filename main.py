@@ -1,7 +1,8 @@
 import re
 import uuid
+from datetime import datetime
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 
 from telegram.ext import (
     Application,
@@ -44,6 +45,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in ADMINS:
 
+        await context.bot.set_my_commands(
+            commands=[
+                BotCommand("start", "iniciar el bot"),
+                BotCommand("add", "agregar canal"),
+                BotCommand("del", "eliminar canal"),
+                BotCommand("id", "obtener id del grupo"),
+                BotCommand("check", "ver mensajes programados"),
+                BotCommand("msg", "establecer mensaje de bienvenida"),
+            ],
+            language_code="es",
+        )
+
         await update.message.reply_text(
             f"👋 Bienvenido {name} reenvíe un mensaje para programarlo"
         )
@@ -65,6 +78,13 @@ async def agregar_canal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in ADMINS:
 
+        if update.message.text == "/add":
+            await update.message.reply_text(
+                f"ℹ️ Para agregar un canal debe usar el comando de esta forma: <code>/add -1001234567</code>",
+                parse_mode="html",
+            )
+            return
+
         chat_id = update.message.text.replace("/add ", "")
 
         try:
@@ -80,14 +100,20 @@ async def agregar_canal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             except:
 
-                await update.message.reply_text(f"✖️ el id {chat_id} ya existe")
+                await update.message.reply_text(
+                    f"✖️ el canal con id <code>{chat_id}</code> ya fue registrado anteriormente.",
+                    parse_mode="html",
+                )
                 return
 
             await update.message.reply_text("✅ guardado")
 
         except:
 
-            await update.message.reply_text(f"✖️ el id {chat_id} no fue encontrado")
+            await update.message.reply_text(
+                f"✖️ Primero asegúrate que el bot es administrador en el canal con id <code>{chat_id}</code> y luego intente de nuevo.",
+                parse_mode="html",
+            )
 
 
 async def borrar_canal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,16 +123,34 @@ async def borrar_canal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in ADMINS:
 
+        if update.message.text == "/del":
+            await update.message.reply_text(
+                f"ℹ️ Para borrar un canal debe usar el comando de esta forma: <code>/del -1001234567</code>",
+                parse_mode="html",
+            )
+            return
+
         chat_id = update.message.text.replace("/del ", "")
 
         try:
 
-            eliminar_canal(int(chat_id))
+            if eliminar_canal(int(chat_id)):
 
-            await update.message.reply_text("✅ eliminado")
+                await update.message.reply_text("✅ eliminado")
+
+                return
+
+            await update.message.reply_text(
+                f"✖️ el canal con id <code>{chat_id}</code> no fue encontrado en el registro.",
+                parse_mode="html",
+            )
+
         except:
 
-            await update.message.reply_text(f"✖️ el id {chat_id} no fue encontrado")
+            await update.message.reply_text(
+                f"✖️ el id <code>{chat_id}</code> no es un id válido.",
+                parse_mode="html",
+            )
 
 
 async def obtener_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +179,7 @@ async def obtener_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["chat_id"] = chat_id
 
         await update.message.reply_text(
-            text="⏰ Ingrese la fecha para reenviar el mensaje\n\nEjemplo: <code>5-03-2023 13:30</code>",
+            text=f"⏰ Ingrese la fecha para reenviar el mensaje\n\nEjemplo: <code>{datetime.now().strftime('%d-%m-%Y %H:%M')}</code>",
             parse_mode="html",
         )
 
@@ -190,16 +234,26 @@ async def fecha_eliminacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return ConversationHandler.END
 
-        if re.match(r"[0-9]{1,4}", text):
+        if re.match(r"^[0-9]{1,4}$", text):
 
             context.user_data["eliminar"] = int(text)
 
             canales = seleccionar_canales()
 
             buttons = []
-            for canal in canales:
+            for canal in canales[0:5]:
                 buttons.append(
-                    [InlineKeyboardButton(text=canal[1], callback_data=str(canal[0]))]
+                    [InlineKeyboardButton(text=canal[1], callback_data=f"{canal[0]}|0")]
+                )
+
+            if len(canales) > 5:
+
+                buttons.append(
+                    [
+                        InlineKeyboardButton(
+                            text="➡️ siguiente", callback_data="navegar|5"
+                        )
+                    ]
                 )
 
             buttons.append(
@@ -222,7 +276,7 @@ async def fecha_eliminacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return STATE_3
 
         await update.message.reply_text(
-            text=f"✖️ formato <code>{text}</code> no es correcto",
+            text=f"✖️ Debe enviar solo la cantidad de minutos que durará la publicación puede ser de 1 minuto a 9999 minutos.",
             parse_mode="html",
         )
 
@@ -230,54 +284,34 @@ async def fecha_eliminacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def seleccionar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """seleccionar los canales para publicar el mensaje"""
 
-    data = update.callback_query.data
+    data = update.callback_query.data.split("|")[0]
+    index = int(update.callback_query.data.split("|")[1])
 
-    canales = seleccionar_canales()
+    if context.user_data.get("channels") is None:
+        context.user_data["channels"] = [data]
 
-    try:
-        if data in context.user_data["channels"]:
+    elif data in context.user_data["channels"]:
 
-            context.user_data["channels"] = context.user_data["channels"].replace(
-                data, ""
-            )
+        canales_seleccionados = context.user_data["channels"]
+        canales_seleccionados.remove(data)
+        context.user_data["channels"] = canales_seleccionados
 
-        else:
-            context.user_data["channels"] += f",{data}"
+    else:
+        context.user_data["channels"] += [data]
 
-    except KeyError:
-
-        context.user_data["channels"] = data
-
-    buttons = []
-
-    for canal in canales:
-        channel_name = canal[1]
-        if canal[0] in [
-            int(id) for id in context.user_data["channels"].split(",") if id != ""
-        ]:
-            channel_name = "☑️ " + canal[1]
-
-        buttons.append(
-            [InlineKeyboardButton(text=channel_name, callback_data=str(canal[0]))]
-        )
-
-    buttons.append([InlineKeyboardButton(text="✅ aceptar", callback_data="aceptar")])
-
-    await update.callback_query.edit_message_reply_markup(
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+    await editar_mensaje(update, context, index)
 
 
 async def aceptar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """seleccionar los canales para publicar el mensaje"""
 
     await update.callback_query.edit_message_text(
-        text="Guardar mensaje programado",
+        text="Guardar mensaje programado ?",
         reply_markup=InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(text="✅", callback_data="✅"),
-                    InlineKeyboardButton(text="❌", callback_data="❌"),
+                    InlineKeyboardButton(text="si ✅", callback_data="✅"),
+                    InlineKeyboardButton(text="no ❌", callback_data="❌"),
                 ]
             ]
         ),
@@ -310,6 +344,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # programamos el reenvio
         programar_reenvio(id)
+
+        if context.user_data["channels"]:
+            del context.user_data["channels"]
 
     else:
 
@@ -415,6 +452,8 @@ async def obtener_id_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     await update.message.reply_text("🟢 Se ha cancelado la operación ")
+    if context.user_data["channels"]:
+        del context.user_data["channels"]
 
     return ConversationHandler.END
 
@@ -426,6 +465,13 @@ async def agregar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if user_id in ADMINS:
 
         text = update.message.text
+
+        if update.message.text == "/msg":
+            await update.message.reply_text(
+                f"ℹ️ Para establecer un mensaje de bienvenida debe usar el comando de esta forma: <code>/msg 🤖 Saludos humano $NAME!</code>\n\n$NAME se cambiará por el nombre del usuario.",
+                parse_mode="html",
+            )
+            return
 
         new_msg = text.replace("/msg ", "")
 
@@ -440,6 +486,62 @@ async def agregar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except:
 
             await update.message.reply_text(text=f"🔴 Mensaje con mal formato")
+
+
+async def navegar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+    index = int(update.callback_query.data.split("|")[1])
+
+    if context.user_data.get("channels") is None:
+        context.user_data["channels"] = []
+
+    await editar_mensaje(update, context, index)
+
+
+async def editar_mensaje(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+):
+
+    canales = seleccionar_canales()
+    items = 5
+    buttons = []
+
+    for canal in canales[index : index + items]:
+        channel_name = canal[1]
+        if str(canal[0]) in context.user_data["channels"]:
+
+            channel_name = "☑️ " + canal[1]
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=channel_name, callback_data=f"{canal[0]}|{index}"
+                )
+            ]
+        )
+
+    button_next = InlineKeyboardButton(
+        text="➡️ siguiente", callback_data=f"navegar|{index + items}"
+    )
+
+    button_back = InlineKeyboardButton(
+        text="⬅️ atrás", callback_data=f"navegar|{index - items}"
+    )
+
+    if index == 0 and len(canales) > 5:
+        buttons.append([button_next])
+
+    elif len(canales) > index + items:
+        buttons.append([button_back, button_next])
+
+    elif len(canales) < index + items and len(canales) > 5:
+        buttons.append([button_back])
+
+    buttons.append([InlineKeyboardButton(text="✅ aceptar", callback_data="aceptar")])
+
+    await update.callback_query.edit_message_reply_markup(
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 def main():
@@ -471,7 +573,10 @@ def main():
                 STATE_1: [MessageHandler(filters.TEXT, fecha_reenvio)],
                 STATE_2: [MessageHandler(filters.TEXT, fecha_eliminacion)],
                 STATE_3: [
-                    CallbackQueryHandler(pattern=r"^-?[0-9]+$", callback=seleccionar),
+                    CallbackQueryHandler(
+                        pattern=r"^-?[0-9]+|[0-9]+|[0-9]+$", callback=seleccionar
+                    ),
+                    CallbackQueryHandler(pattern=r"^navegar|[0-9]+$", callback=navegar),
                     CallbackQueryHandler(pattern=r"^aceptar$", callback=aceptar),
                 ],
                 STATE_4: [

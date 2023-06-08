@@ -11,7 +11,7 @@ from database import obtener_msg_programado
 from config import DATABASE_URL, TOKEN, ADMINS
 
 
-job_defaults = {"misfire_grace_time": 600}
+job_defaults = {"misfire_grace_time": 1000}
 
 scheduler = BackgroundScheduler(job_defaults=job_defaults, timezone="America/Caracas")
 scheduler.add_jobstore("sqlalchemy", url=DATABASE_URL)
@@ -25,9 +25,7 @@ def enviar(id: str, delete_date: datetime):
 
         bot = Bot(TOKEN)
 
-        list_channels = [
-            int(canal_id) for canal_id in data[4].split(",") if canal_id != ""
-        ]
+        list_channels = [int(canal_id) for canal_id in data[4].split(",")]
 
         # cada mensaje programado a eliminarse
         # tiene una diferencia de 2 segundos
@@ -55,13 +53,16 @@ def enviar(id: str, delete_date: datetime):
                     args=[msg_id, chat_id],
                 )
 
-            except BadRequest as error:
+            except BadRequest:
 
                 for admin in ADMINS:
 
+                    chat_id = str(data[0]).replace("-100", "")
+
                     await bot.send_message(
                         chat_id=admin,
-                        text=f"chat ID {data[0]}, msg ID {data[1]}: {error}",
+                        text=f"⚠️ No puedo reenviar <a href='https://t.me/c/{chat_id}/{data[1]}'>este mensaje</a> si no soy administrador de ese canal.",
+                        parse_mode="html",
                     )
 
             interval += 3
@@ -70,22 +71,26 @@ def enviar(id: str, delete_date: datetime):
 
 
 def eliminar(msg_id: int, chat_id: int):
-    async def run():
+    async def run(msg_id,chat_id):
 
         bot = Bot(TOKEN)
 
         try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            await bot.delete_message(chat_id, message_id=msg_id)
 
-        except BadRequest as error:
+        except BadRequest:
 
             for admin in ADMINS:
 
+                chat_id = str(chat_id).replace("-100", "")
+
                 await bot.send_message(
-                    chat_id=admin, text=f"chat ID {chat_id}, msg ID {msg_id}: {error}"
+                    chat_id=admin,
+                    text=f"⚠️ No puedo eliminar <a href='https://t.me/c/{chat_id}/{msg_id}'>este mensaje</a> si no soy administrador de ese canal.",
+                    parse_mode="html",
                 )
 
-    asyncio.run(run())
+    asyncio.run(run(msg_id,chat_id))
 
 
 def programar_reenvio(id_msg_prg: str):
