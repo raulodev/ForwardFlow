@@ -40,6 +40,8 @@ from groups import ver_canales_para_agregar
 from groups import seleccionar_canal
 from groups import deseleccionar_canal
 
+from buildmarkup import BuildMarkup
+
 from utils import modify_data
 
 STATE_1, STATE_2, STATE_3, STATE_4 = range(4)
@@ -85,10 +87,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg = obtener_mensaje_bienvenida()
 
-        await update.message.reply_text(
-            text=msg.replace("$NAME", name),
-            parse_mode="html",
-        )
+        buildmarkup = BuildMarkup(msg)
+        markup = buildmarkup.markup()
+        message = buildmarkup.message()
+
+        if markup:
+            await update.message.reply_text(
+                text=message.replace("$NAME", name),
+                parse_mode="html",
+                reply_markup=InlineKeyboardMarkup(markup),
+            )
+
+        else:
+            await update.message.reply_text(
+                text=message.replace("$NAME", name),
+                parse_mode="html",
+            )
 
 
 async def agregar_canal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -518,11 +532,30 @@ async def agregar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if user_id in ADMINS:
         text = update.message.text
 
+        """
+        Cada línea está formada por llaves ({ }) que contiene uno a varios
+        botones que se crean con [botón 1 - www.example.com ]
+
+        1.) Una linea que contenga dos botones:
+        
+            { [botón 1 - www.example.com ] [botón 2 - www.example.com ] } 
+
+        2.) Una linea que contenga un botón:
+            
+            { [botón 1 - www.example.com ] }
+        
+        3.) El mensaje contendrá dos lineas la primera contendrá dos botones y la segunda un botón
+            
+            { [botón 1 - www.example.com ] [botón 2 - www.example.com ] } { [botón 1 - www.example.com ] } =
+        """
+
         if update.message.text == "/msg":
             await update.message.reply_text(
                 (
                     "ℹ️ Para establecer un mensaje de bienvenida debe usar el comando"
-                    " de esta forma: <code>/msg 🤖 Saludos humano $NAME!</code>\n\n$NAME"
+                    " de esta forma:\n\n <code>/msg 🤖 Saludos humano $NAME!\n"
+                    "{ [botón 1 - www.example.com ] [botón 2 - www.example.com ] }\n"
+                    "{ [ botón 3 - www.example.com ]}</code>\n\n$NAME"
                     " se cambiará por el nombre del usuario."
                 ),
                 parse_mode="html",
@@ -532,9 +565,21 @@ async def agregar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         new_msg = text.replace("/msg ", "")
 
         try:
-            await update.message.reply_text(
-                text=f"🟢 Mensaje actualizado\n\n{new_msg}", parse_mode="html"
-            )
+            buildmarkup = BuildMarkup(new_msg)
+            markup = buildmarkup.markup()
+            message = buildmarkup.message()
+
+            if markup:
+                await update.message.reply_text(
+                    text=f"🟢 Mensaje actualizado\n\n{message}",
+                    parse_mode="html",
+                    reply_markup=InlineKeyboardMarkup(markup),
+                )
+
+            else:
+                await update.message.reply_text(
+                    text=f"🟢 Mensaje actualizado\n\n{message}", parse_mode="html"
+                )
 
             actualizar_mensaje_bienvenida(new_msg)
 
